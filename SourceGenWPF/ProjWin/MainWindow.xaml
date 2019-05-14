@@ -20,7 +20,9 @@ limitations under the License.
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SourceGenWPF.ProjWin"
         mc:Ignorable="d"
-        Title="6502bench SourceGen" Width="810" Height="510" MinWidth="800" MinHeight="500">
+        Title="6502bench SourceGen"
+        Icon="/SourceGenWPF;component/Res/SourceGenIcon.ico"
+        Width="810" Height="510" MinWidth="800" MinHeight="500">
 
     <Window.Resources>
         <RoutedUICommand x:Key="AssembleCmd" Text="Assemble...">
@@ -28,10 +30,85 @@ limitations under the License.
                 <KeyGesture>Ctrl+Shift+A</KeyGesture>
             </RoutedUICommand.InputGestures>
         </RoutedUICommand>
+        <RoutedUICommand x:Key="RecentProject"/>
+
+        <!-- don't center the ListView(GridView) column headers
+             https://stackoverflow.com/questions/44119146/wpf-listview-column-header-alignment
+          -->
+        <Style TargetType="{x:Type GridViewColumnHeader}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+        
+        <!--
+        ListView tweaks from https://stackoverflow.com/a/4472061/294248 .  This is
+        necessary to get long comments and notes to start in the Label column.  The
+        approach feels a little wobbly, but it seems to work.
+
+        MSFT GridViewRowPresenter example is promising, but I haven't figured out how to
+        make long-comment rows follow the same header (maybe manual update in code-behind?).
+        https://docs.microsoft.com/en-us/dotnet/api/system.windows.controls.gridviewrowpresenter?view=netframework-4.8
+        (in examples: snippets\csharp\VS_Snippets_Wpf\ListViewItemStyleSnippet)
+
+        https://docs.microsoft.com/en-us/dotnet/framework/wpf/controls/how-to-display-data-by-using-gridviewrowpresenter
+
+        Item Template Selectors are another possibility, maybe?
+        https://stackoverflow.com/q/5416946/294248
+
+        Getting more custom:
+        -->
+        <Style x:Key="codeListViewItemStyle" TargetType="ListViewItem">
+            <Style.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Red"/>
+            </Style.Resources>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSingleLine}" Value="True">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ListViewItem}">
+                                <Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding ElementName=codeListView, Path=View.Columns[0].ActualWidth}"/>
+                                            <ColumnDefinition Width="{Binding ElementName=codeListView, Path=View.Columns[1].ActualWidth}"/>
+                                            <ColumnDefinition Width="{Binding ElementName=codeListView, Path=View.Columns[2].ActualWidth}"/>
+                                            <ColumnDefinition Width="{Binding ElementName=codeListView, Path=View.Columns[3].ActualWidth}"/>
+                                            <ColumnDefinition Width="{Binding ElementName=codeListView, Path=View.Columns[4].ActualWidth}"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="5" Padding="8,2" Text="{Binding Comment}"
+                                                   Background="{TemplateBinding Background}"/>
+                                    </Grid>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+
+                <Trigger Property="IsSelected" Value="True">
+                    <Trigger.Setters>
+                        <Setter Property="Background" Value="LightBlue"/>
+                    </Trigger.Setters>
+                </Trigger>
+            </Style.Triggers>
+
+            <!--
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type ListViewItem}">
+                            <Grid>
+                                <GridViewRowPresenter />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            -->
+
+        </Style>
     </Window.Resources>
 
     <Window.CommandBindings>
         <CommandBinding Command="{StaticResource AssembleCmd}" Executed="AssembleCmd_Executed"/>
+        <CommandBinding Command="{StaticResource RecentProject}" Executed="RecentProject_Executed"/>
     </Window.CommandBindings>
     
     <DockPanel>
@@ -168,15 +245,15 @@ limitations under the License.
                               HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
             </Grid>
 
-            <Grid Name="CenterPanel" Grid.Column="2">
+            <Grid Name="launchPanel" Grid.Column="2"
+                  Visibility="{Binding Path=LaunchPanelVisibility}" d:IsHidden="True">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal">
-                    <Image Source="pack://application:,,,/Res/Logo.png" Height="100"/>
-                    <!-- <Image Source="Res/Logo.png" Height="100"/> -->
+                    <Image Source="/SourceGenWPF;component/Res/Logo.png" Height="100"/>
                     <Grid Margin="8">
                         <Grid.RowDefinitions>
                             <RowDefinition/>
@@ -185,17 +262,45 @@ limitations under the License.
                         <TextBlock Grid.Row="0" VerticalAlignment="Center"
                                    Text="6502bench SourceGen" FontSize="36"/>
                         <TextBlock Grid.Row="1" VerticalAlignment="Center"
-                                   Text="Version X.Y.Z Alpha 1" FontSize="24"/>
+                                   Text="{Binding ProgramVersionString, StringFormat={}Version {0},
+                                       RelativeSource={RelativeSource FindAncestor, AncestorType=Window},
+                                       FallbackValue=Version X.Y.Z-alpha1}"
+                                   FontSize="24"/>
                     </Grid>
                 </StackPanel>
 
                 <StackPanel Grid.Row="1" HorizontalAlignment="Left">
                     <Button Content="Start new project" Width="200" Height="50" Margin="10,30,10,10"/>
                     <Button Content="Open existing project" Width="200" Height="50" Margin="10"/>
-                    <Button Content="Recent project #1" Width="200" Height="50" Margin="10"/>
-                    <Button Content="Recent project #2" Width="200" Height="50" Margin="10"/>
+                    <Button Content="Recent project #1" Width="200" Height="50" Margin="10"
+                            CommandParameter="1"
+                            Command="{DynamicResource RecentProject}"/>
+                    <Button Content="Recent project #2" Width="200" Height="50" Margin="10"
+                            CommandParameter="2"
+                            Command="{DynamicResource RecentProject}"/>
                 </StackPanel>
             </Grid>
+
+            <ListView Name="codeListView" Grid.Column="2"
+                      FontFamily="{StaticResource GeneralMonoFont}"
+                      Visibility="{Binding Path=CodeListVisibility}"
+                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                      ItemContainerStyle="{StaticResource codeListViewItemStyle}" SelectionChanged="CodeListView_SelectionChanged">
+                <ListView.View>
+                    <GridView AllowsColumnReorder="False">
+                        <GridViewColumn Header="Offset" DisplayMemberBinding="{Binding Offset}"/>
+                        <GridViewColumn Header="Addr" DisplayMemberBinding="{Binding Addr}"/>
+                        <GridViewColumn Header="Bytes" DisplayMemberBinding="{Binding Bytes}"/>
+                        <GridViewColumn Header="Flags" DisplayMemberBinding="{Binding Flags}"/>
+                        <GridViewColumn Header="Attr" DisplayMemberBinding="{Binding Attr}"/>
+                        <GridViewColumn Header="Label" DisplayMemberBinding="{Binding Label}"/>
+                        <GridViewColumn Header="Opcode" DisplayMemberBinding="{Binding Opcode}"/>
+                        <GridViewColumn Header="Operand" DisplayMemberBinding="{Binding Operand}"/>
+                        <GridViewColumn Header="Comment" DisplayMemberBinding="{Binding Comment}"/>
+                    </GridView>
+                </ListView.View>
+
+            </ListView>
 
             <Grid Name="RightPanel" Grid.Column="4">
                 <Grid.RowDefinitions>
